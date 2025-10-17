@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
+import time
 import os
 
 # ===============================
@@ -43,21 +44,22 @@ if not os.path.exists(csv_file):
 # 🧠 Fungsi Ambil Data Cuaca
 # ===============================
 def get_weather_data(city):
-    """Ambil data cuaca saat ini & prakiraan 5 hari (3 jam interval)."""
-    weather_url = f"{BASE_URL}/weather?q={city}&appid={API_KEY}&units=metric&lang=id"
-    forecast_url = f"{BASE_URL}/forecast?q={city}&appid={API_KEY}&units=metric&lang=id"
-
+    """Ambil data cuaca saat ini & prakiraan 5 hari (3 jam interval)"""
     try:
-        w_response = requests.get(weather_url)
-        f_response = requests.get(forecast_url)
+        # pastikan key bersih
+        api_key = API_KEY.strip()
+        base = "https://api.openweathermap.org/data/2.5"
 
-        # Cek kode HTTP
-        if w_response.status_code != 200:
-            raise Exception(f"HTTP {w_response.status_code} - {w_response.text}")
+        # 1️⃣ Fetch current weather
+        w_url = f"{base}/weather?q={city}&appid={api_key}&units=metric&lang=id"
+        w_resp = requests.get(w_url, timeout=10)
 
-        w = w_response.json()
-        f = f_response.json()
+        if w_resp.status_code == 401:
+            raise Exception("API key invalid atau belum aktif (HTTP 401).")
+        if w_resp.status_code != 200:
+            raise Exception(f"HTTP {w_resp.status_code}: {w_resp.text}")
 
+        w = w_resp.json()
         current = {
             "city": city.title(),
             "temp": w["main"]["temp"],
@@ -66,28 +68,35 @@ def get_weather_data(city):
             "description": w["weather"][0]["description"].title()
         }
 
-        forecast_df = pd.DataFrame([
-            {
-                "time": x["dt_txt"],
-                "temp": x["main"]["temp"],
-                "humidity": x["main"]["humidity"],
-                "pressure": x["main"]["pressure"]
-            }
-            for x in f.get("list", [])
-        ])
+        # 2️⃣ Fetch forecast
+        f_url = f"{base}/forecast?q={city}&appid={api_key}&units=metric&lang=id"
+        f_resp = requests.get(f_url, timeout=10)
 
-        # Simpan history ke CSV
-        new_row = {
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            **current
-        }
+        if f_resp.status_code != 200:
+            st.warning(f"⚠️ Prakiraan {city.title()} gagal dimuat: {f_resp.text}")
+            forecast_df = pd.DataFrame()
+        else:
+            f = f_resp.json()
+            forecast_df = pd.DataFrame([
+                {
+                    "time": x["dt_txt"],
+                    "temp": x["main"]["temp"],
+                    "humidity": x["main"]["humidity"],
+                    "pressure": x["main"]["pressure"]
+                } for x in f.get("list", [])
+            ])
+
+        # 3️⃣ Simpan log
+        new_row = {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), **current}
         pd.DataFrame([new_row]).to_csv(csv_file, mode="a", header=False, index=False)
 
+        time.sleep(1)  # jeda aman antar request
         return current, forecast_df
 
     except Exception as e:
         st.error(f"❌ {city.title()}: Gagal mengambil data. {e}")
         return None, None
+
 
 # ===============================
 # 🚀 Tampilkan Dashboard
