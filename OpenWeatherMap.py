@@ -19,7 +19,7 @@ menggunakan **OpenWeatherMap Free API** 🌍.
 # ===============================
 # 🔑 API Key & Endpoint
 # ===============================
-API_KEY = "52bf74effb7223642f508b09cf04b348"
+API_KEY = "acba4e0cd0de723d8898bd49db348310"
 BASE_URL = "https://api.openweathermap.org/data/2.5"
 
 # ===============================
