@@ -5,51 +5,76 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import os
 
+# ===============================
+# ⚙️ Konfigurasi Aplikasi
+# ===============================
 st.set_page_config(page_title="🌦️ Multi-City Weather Dashboard", layout="wide")
 
-st.title("🌦️ Live Weather Dashboard")
+st.title("🌦️ Real-Time Weather Dashboard")
 st.markdown("""
-Aplikasi ini menampilkan cuaca real-time dan prakiraan 3 jam (5 hari)  
-menggunakan **OpenWeatherMap Free API Plan**.
+Menampilkan cuaca saat ini dan prakiraan 5 hari (3 jam sekali)  
+menggunakan **OpenWeatherMap Free API** 🌍.
 """)
 
-# Sidebar - input API Key dan kota
-st.sidebar.header("⚙️ Pengaturan")
-api_key = st.sidebar.text_input("🔑 Masukkan API Key OpenWeatherMap", type="password")
-cities_input = st.sidebar.text_area("🏙️ Daftar Kota (pisahkan dengan koma)", "Jakarta,Bandung,Surabaya")
+# ===============================
+# 🔑 API Key & Endpoint
+# ===============================
+API_KEY = "52bf74effb7223642f508b09cf04b348"
+BASE_URL = "https://api.openweathermap.org/data/2.5"
 
-# Konfigurasi file CSV
+# ===============================
+# 📍 Input Kota dari Sidebar
+# ===============================
+st.sidebar.header("🏙️ Pengaturan Kota")
+city_input = st.sidebar.text_area(
+    "Masukkan nama kota (pisahkan dengan koma):",
+    value="Jakarta,Bandung,Surabaya"
+)
+cities = [c.strip() for c in city_input.split(",") if c.strip()]
+
+# ===============================
+# 💾 File CSV untuk Riwayat
+# ===============================
 csv_file = "weather_history.csv"
 if not os.path.exists(csv_file):
     pd.DataFrame(columns=["timestamp", "city", "temp", "humidity", "pressure", "description"]).to_csv(csv_file, index=False)
 
-def get_weather(city, api_key):
-    """Ambil cuaca sekarang & prakiraan 5 hari (3 jam interval)"""
-    base_url = "https://api.openweathermap.org/data/2.5"
-    weather_url = f"{base_url}/weather?q={city}&appid={api_key}&units=metric"
-    forecast_url = f"{base_url}/forecast?q={city}&appid={api_key}&units=metric"
+# ===============================
+# 🧠 Fungsi Ambil Data Cuaca
+# ===============================
+def get_weather_data(city):
+    """Ambil data cuaca saat ini & prakiraan 5 hari (3 jam interval)."""
+    weather_url = f"{BASE_URL}/weather?q={city}&appid={API_KEY}&units=metric&lang=id"
+    forecast_url = f"{BASE_URL}/forecast?q={city}&appid={API_KEY}&units=metric&lang=id"
 
     try:
-        w = requests.get(weather_url).json()
-        f = requests.get(forecast_url).json()
+        w_response = requests.get(weather_url)
+        f_response = requests.get(forecast_url)
 
-        if w.get("cod") != 200:
-            raise Exception(w.get("message", "Error fetching data"))
+        # Cek kode HTTP
+        if w_response.status_code != 200:
+            raise Exception(f"HTTP {w_response.status_code} - {w_response.text}")
+
+        w = w_response.json()
+        f = f_response.json()
 
         current = {
-            "city": city,
+            "city": city.title(),
             "temp": w["main"]["temp"],
             "humidity": w["main"]["humidity"],
             "pressure": w["main"]["pressure"],
-            "description": w["weather"][0]["description"].title(),
+            "description": w["weather"][0]["description"].title()
         }
 
-        forecast_df = pd.DataFrame([{
-            "time": x["dt_txt"],
-            "temp": x["main"]["temp"],
-            "humidity": x["main"]["humidity"],
-            "pressure": x["main"]["pressure"]
-        } for x in f.get("list", [])])
+        forecast_df = pd.DataFrame([
+            {
+                "time": x["dt_txt"],
+                "temp": x["main"]["temp"],
+                "humidity": x["main"]["humidity"],
+                "pressure": x["main"]["pressure"]
+            }
+            for x in f.get("list", [])
+        ])
 
         # Simpan history ke CSV
         new_row = {
@@ -61,32 +86,36 @@ def get_weather(city, api_key):
         return current, forecast_df
 
     except Exception as e:
-        st.error(f"❌ {city}: Gagal memuat data - {e}")
+        st.error(f"❌ {city.title()}: Gagal mengambil data. {e}")
         return None, None
 
-if api_key:
-    cities = [c.strip() for c in cities_input.split(",") if c.strip()]
-    for city in cities:
-        current, forecast_df = get_weather(city, api_key)
-        if current and forecast_df is not None:
-            with st.expander(f"🌍 {city.title()}"):
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("🌡️ Suhu (°C)", f"{current['temp']:.1f}")
-                col2.metric("💧 Kelembapan (%)", f"{current['humidity']}%")
-                col3.metric("🔽 Tekanan (hPa)", f"{current['pressure']}")
-                col4.metric("🌤️ Cuaca", current["description"])
+# ===============================
+# 🚀 Tampilkan Dashboard
+# ===============================
+for city in cities:
+    current, forecast = get_weather_data(city)
+    if current and forecast is not None:
+        with st.expander(f"🌍 {current['city']}"):
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("🌡️ Suhu (°C)", f"{current['temp']:.1f}")
+            col2.metric("💧 Kelembapan (%)", f"{current['humidity']}%")
+            col3.metric("🔽 Tekanan (hPa)", f"{current['pressure']}")
+            col4.metric("🌤️ Cuaca", current['description'])
 
-                st.write("### 📊 Prakiraan 5 Hari (3 Jam Interval)")
-                fig, ax = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
-                ax[0].plot(forecast_df["time"], forecast_df["temp"], marker="o")
-                ax[0].set_ylabel("Temp (°C)")
-                ax[1].plot(forecast_df["time"], forecast_df["humidity"], marker="o", color="orange")
-                ax[1].set_ylabel("Humidity (%)")
-                ax[2].plot(forecast_df["time"], forecast_df["pressure"], marker="o", color="green")
-                ax[2].set_ylabel("Pressure (hPa)")
-                plt.xticks(rotation=45)
-                st.pyplot(fig)
+            st.write("### 📊 Prakiraan 5 Hari (Setiap 3 Jam)")
+            fig, ax = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
 
-    st.success("✅ Data berhasil dimuat. History otomatis tersimpan ke `weather_history.csv`.")
-else:
-    st.warning("⚠️ Masukkan API Key terlebih dahulu di sidebar untuk memulai.")
+            ax[0].plot(forecast["time"], forecast["temp"], marker="o", color="tab:red")
+            ax[0].set_ylabel("Suhu (°C)")
+
+            ax[1].plot(forecast["time"], forecast["humidity"], marker="o", color="tab:blue")
+            ax[1].set_ylabel("Kelembapan (%)")
+
+            ax[2].plot(forecast["time"], forecast["pressure"], marker="o", color="tab:green")
+            ax[2].set_ylabel("Tekanan (hPa)")
+
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
+
+st.success("✅ Data berhasil dimuat dan disimpan ke `weather_history.csv`.")
